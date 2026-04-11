@@ -11,6 +11,8 @@ thumbs/
 manifest.json
 annotations.json
 clusters.json
+clusters_raw.txt
+.upload_state.json
 
 # Build artifacts
 slideshow.html

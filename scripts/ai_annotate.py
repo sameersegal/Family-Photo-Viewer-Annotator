@@ -12,9 +12,9 @@ Prerequisites:
         export ANTHROPIC_API_KEY="sk-ant-..."
 
 Usage:
-    python ai_annotate.py                   # Pass 1: annotate photos
-    python ai_annotate.py --cluster         # Pass 2: cluster annotations
-    python ai_annotate.py --help            # Show help
+    python scripts/ai_annotate.py                   # Pass 1: annotate photos
+    python scripts/ai_annotate.py --cluster         # Pass 2: cluster annotations
+    python scripts/ai_annotate.py --help            # Show help
 
 The script reads images from ./images/ and optionally uses family_context.md
 for richer, more accurate annotations.
@@ -24,9 +24,14 @@ import argparse
 import base64
 import json
 import mimetypes
+import os
 import sys
 import time
 from pathlib import Path
+
+# Always resolve paths relative to the project root.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)
 
 try:
     import anthropic
@@ -143,7 +148,7 @@ def get_image_files() -> list[Path]:
     """Return sorted list of image files in the images directory."""
     if not IMAGES_DIR.exists():
         print(f"ERROR: {IMAGES_DIR}/ directory not found.")
-        print("Download images first with: python download_images.py <FOLDER_ID>")
+        print("Download images first with: python scripts/download_images.py <FOLDER_ID>")
         sys.exit(1)
 
     files = sorted(
@@ -549,9 +554,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-  python ai_annotate.py                 Annotate all photos (Pass 1)
-  python ai_annotate.py --dry-run       Show what would be done without calling API
-  python ai_annotate.py --cluster       Cluster photos by event/trip (Pass 2)
+  python scripts/ai_annotate.py                 Annotate all photos (Pass 1)
+  python scripts/ai_annotate.py --dry-run       Show what would be done without calling API
+  python scripts/ai_annotate.py --cluster       Cluster photos by event/trip (Pass 2)
 
 The script reads images from ./images/ and saves results to annotations.json.
 For better results, create a family_context.md file (see family_context_template.md).

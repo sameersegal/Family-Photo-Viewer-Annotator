@@ -5,14 +5,19 @@ Scans ./images/ and generates manifest.json with the image list.
 Optionally generates thumbnails for local development.
 
 Usage:
-  python build.py              # Generate manifest.json
-  python build.py --thumbs     # Also generate local thumbnails
+  python scripts/build.py              # Generate manifest.json
+  python scripts/build.py --thumbs     # Also generate local thumbnails
 """
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Always resolve paths relative to the project root.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
 IMAGES_DIR = Path("images")
@@ -66,7 +71,7 @@ def generate_thumbnails():
 def main():
     if not IMAGES_DIR.exists():
         print(f"ERROR: {IMAGES_DIR}/ folder not found. Download images first.")
-        print("  Run: python download_images.py <FOLDER_ID>")
+        print("  Run: python scripts/download_images.py <FOLDER_ID>")
         return
 
     images = sorted(
@@ -97,7 +102,7 @@ def main():
 
     print()
     print("Next steps:")
-    print("  1. python serve.py          # Start local server")
+    print("  1. python scripts/serve.py          # Start local server")
     print("  2. Open http://localhost:8765")
     if "--thumbs" not in sys.argv:
         print()

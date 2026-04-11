@@ -5,10 +5,10 @@ Prerequisites:
   1. Create a Google Cloud project at https://console.cloud.google.com
   2. Enable the Google Drive API
   3. Create OAuth 2.0 credentials (Desktop app) and download as credentials.json
-  4. Place credentials.json in this directory
+  4. Place credentials.json in the project root directory
 
 Usage:
-  python download_images.py <FOLDER_ID>
+  python scripts/download_images.py <FOLDER_ID>
 
   FOLDER_ID is the ID from the Google Drive folder URL:
   https://drive.google.com/drive/folders/<FOLDER_ID>
@@ -17,6 +17,10 @@ Usage:
 import os
 import sys
 from pathlib import Path
+
+# Always resolve paths relative to the project root.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -99,7 +103,7 @@ def download_file(service, file_id, dest_path):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python download_images.py <FOLDER_ID>")
+        print("Usage: python scripts/download_images.py <FOLDER_ID>")
         sys.exit(1)
 
     folder_id = sys.argv[1]

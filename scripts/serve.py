@@ -5,13 +5,19 @@ Serves the app at http://localhost:8765 with proper MIME types
 for ES modules and JSON files.
 
 Usage:
-  python serve.py
-  python serve.py 3000    # Custom port
+  python scripts/serve.py
+  python scripts/serve.py 3000    # Custom port
 """
 
 import http.server
+import os
 import socketserver
 import sys
+from pathlib import Path
+
+# Always serve from the project root, regardless of where the script is invoked.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
 
