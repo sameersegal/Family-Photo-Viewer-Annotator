@@ -1,4 +1,26 @@
+# Credentials & tokens
 credentials.json
 token.json
+.env
+
+# Image folders (too large for git — stored in R2)
 images/
+thumbs/
+
+# Generated files
+manifest.json
+annotations.json
+clusters.json
+
+# Build artifacts
 slideshow.html
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db

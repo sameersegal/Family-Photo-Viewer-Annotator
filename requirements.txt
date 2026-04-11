@@ -1,3 +1,13 @@
+# Google Drive image download
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
+
+# AI annotation (Claude Vision API)
+anthropic
+
+# Image processing (thumbnails)
+Pillow
+
+# Cloudflare R2 upload
+boto3
