@@ -3,258 +3,104 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Remembrance Day Slideshow</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    background: #000;
-    overflow: hidden;
-    cursor: none;
-    width: 100vw;
-    height: 100vh;
-  }
-
-  .slide {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
-    background-size: contain;
-    background-position: center;
-    background-repeat: no-repeat;
-    opacity: 0;
-    transition: opacity 1.5s ease-in-out;
-    z-index: 1;
-  }
-
-  .slide.active {
-    opacity: 1;
-  }
-
-  #frame-overlay {
-    position: fixed;
-    bottom: 0;
-    left: 24px;
-    z-index: 10;
-    pointer-events: none;
-  }
-
-  #frame-overlay img {
-    height: 60px;
-    width: auto;
-    opacity: 0.85;
-  }
-
-  #start-screen {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 100;
-    background: #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-
-  #start-screen p {
-    color: #ccc;
-    font-family: Georgia, serif;
-    font-size: 1.5rem;
-    text-align: center;
-    line-height: 2;
-  }
-
-  #pause-indicator {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    color: rgba(255,255,255,0.7);
-    font-family: monospace;
-    font-size: 1.2rem;
-    z-index: 20;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-
-  #counter {
-    position: fixed;
-    bottom: 12px;
-    right: 16px;
-    color: rgba(255,255,255,0.3);
-    font-family: monospace;
-    font-size: 0.8rem;
-    z-index: 20;
-    pointer-events: none;
-  }
-</style>
+<title>Our Family Album</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<div id="start-screen">
-  <p>Click anywhere or press any key to start the slideshow<br><small>Press F11 for full screen</small></p>
+<!-- ============================================================
+     HEADER
+     ============================================================ -->
+<header id="app-header">
+  <h1>Our Family Album <small>Photos &amp; Memories</small></h1>
+  <nav>
+    <button data-view="gallery" class="active">Gallery</button>
+    <button data-view="slideshow">Slideshow</button>
+  </nav>
+  <div id="user-info">
+    <span id="user-name-display"></span>
+    <button id="change-user">Change</button>
+  </div>
+</header>
+
+<!-- ============================================================
+     GALLERY VIEW
+     ============================================================ -->
+<main id="gallery-view" class="view active">
+  <div id="gallery-toolbar">
+    <input type="search" id="search-input" placeholder="Search photos, people, places...">
+    <div id="people-filter"></div>
+    <span id="gallery-stats"></span>
+  </div>
+  <div id="gallery-grid"></div>
+</main>
+
+<!-- ============================================================
+     DETAIL VIEW
+     ============================================================ -->
+<main id="detail-view" class="view">
+  <div id="detail-container">
+    <div id="detail-photo-area">
+      <button class="nav-btn" id="detail-prev">&#8249;</button>
+      <img id="detail-photo" src="" alt="">
+      <button class="nav-btn" id="detail-next">&#8250;</button>
+    </div>
+    <aside id="detail-sidebar">
+      <!-- AI Annotation -->
+      <div class="sidebar-section" id="annotation-section">
+        <h3>About this photo <span class="badge" id="annotation-status"></span></h3>
+        <div id="ai-annotation-content"></div>
+        <div class="annotation-actions" id="annotation-actions">
+          <button class="btn-confirm" id="btn-confirm">&#10003; Correct</button>
+          <button id="btn-edit">&#9998; Edit</button>
+        </div>
+      </div>
+      <!-- People -->
+      <div class="sidebar-section" id="people-section">
+        <h3>People in this photo</h3>
+        <div id="people-tags"></div>
+        <div id="add-person-form">
+          <input type="text" id="person-input" placeholder="Add person..." autocomplete="off">
+          <button class="btn-add-person" id="btn-add-person">+</button>
+        </div>
+        <div id="person-suggestions"></div>
+      </div>
+      <!-- Anecdotes -->
+      <div class="sidebar-section" id="anecdotes-section">
+        <h3>Stories &amp; Memories</h3>
+        <div id="anecdotes-list"></div>
+        <textarea id="anecdote-input" placeholder="Share a memory about this photo..."></textarea>
+        <button class="btn-add-anecdote" id="btn-add-anecdote">Share</button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- ============================================================
+     SLIDESHOW VIEW
+     ============================================================ -->
+<main id="slideshow-view" class="view">
+  <div class="slide" id="slide-a"></div>
+  <div class="slide" id="slide-b"></div>
+  <div id="slideshow-annotation-overlay"></div>
+  <div id="frame-overlay"><img src="frame.png" alt=""></div>
+  <div id="counter"></div>
+  <div id="pause-indicator">&#10074;&#10074; PAUSED</div>
+  <button id="slideshow-exit">&#10005;</button>
+</main>
+
+<!-- ============================================================
+     USER NAME MODAL
+     ============================================================ -->
+<div id="user-modal" class="modal">
+  <div class="modal-content">
+    <h2>Welcome to the Family Album</h2>
+    <p>What's your name? So we know who's adding stories.</p>
+    <input type="text" id="user-name-input" placeholder="Your name...">
+    <button id="user-name-submit">Enter Album</button>
+  </div>
 </div>
 
-<div id="frame-overlay"><img src="frame.png" alt="Krishnand at 100"></div>
-
-<div class="slide" id="slide-a"></div>
-<div class="slide" id="slide-b"></div>
-
-<div id="counter"></div>
-<div id="pause-indicator">❚❚ PAUSED</div>
-
-<script>
-// ============================================================
-// IMAGE LIST — replaced by build.py
-// ============================================================
-const IMAGES = __IMAGE_LIST__;
-
-// ============================================================
-// CONFIG
-// ============================================================
-const AUTO_ADVANCE_MS = 6000;  // 6 seconds
-const FADE_MS = 1500;          // matches CSS transition duration
-
-// ============================================================
-// STATE
-// ============================================================
-let currentIndex = -1;
-let shuffled = [];
-let autoTimer = null;
-let isRunning = false;
-
-const slideA = document.getElementById('slide-a');
-const slideB = document.getElementById('slide-b');
-const counter = document.getElementById('counter');
-const startScreen = document.getElementById('start-screen');
-
-let activeSlide = slideA;
-let nextSlide = slideB;
-
-// ============================================================
-// SHUFFLE (Fisher-Yates)
-// ============================================================
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-// ============================================================
-// PRELOAD
-// ============================================================
-function preload(src) {
-  const img = new Image();
-  img.src = src;
-}
-
-function preloadAhead() {
-  for (let i = 1; i <= 3; i++) {
-    const idx = (currentIndex + i) % shuffled.length;
-    preload('images/' + shuffled[idx]);
-  }
-}
-
-// ============================================================
-// SHOW SLIDE
-// ============================================================
-function showSlide(index) {
-  currentIndex = index % shuffled.length;
-  const src = 'images/' + shuffled[currentIndex];
-
-  nextSlide.style.backgroundImage = `url('${src}')`;
-  nextSlide.classList.add('active');
-  activeSlide.classList.remove('active');
-
-  // Swap references
-  [activeSlide, nextSlide] = [nextSlide, activeSlide];
-
-  counter.textContent = `${currentIndex + 1} / ${shuffled.length}`;
-  preloadAhead();
-}
-
-function nextImage() {
-  showSlide(currentIndex + 1);
-  resetAutoTimer();
-}
-
-function prevImage() {
-  showSlide((currentIndex - 1 + shuffled.length) % shuffled.length);
-  resetAutoTimer();
-}
-
-// ============================================================
-// AUTO-ADVANCE & PAUSE
-// ============================================================
-let paused = false;
-
-function resetAutoTimer() {
-  if (autoTimer) clearInterval(autoTimer);
-  if (!paused) {
-    autoTimer = setInterval(nextImage, AUTO_ADVANCE_MS);
-  }
-}
-
-function togglePause() {
-  paused = !paused;
-  const pauseEl = document.getElementById('pause-indicator');
-  if (paused) {
-    if (autoTimer) clearInterval(autoTimer);
-    autoTimer = null;
-    pauseEl.style.opacity = '1';
-  } else {
-    pauseEl.style.opacity = '0';
-    resetAutoTimer();
-  }
-}
-
-// ============================================================
-// START
-// ============================================================
-function start() {
-  if (isRunning) return;
-  isRunning = true;
-  startScreen.style.display = 'none';
-
-  shuffled = shuffle(IMAGES);
-  showSlide(0);
-  resetAutoTimer();
-}
-
-// ============================================================
-// CONTROLS
-// ============================================================
-document.addEventListener('keydown', (e) => {
-  if (!isRunning) { start(); return; }
-
-  switch (e.key) {
-    case 'ArrowRight':
-    case ' ':
-      nextImage();
-      break;
-    case 'ArrowLeft':
-      prevImage();
-      break;
-    case 'Escape':
-    case 'p':
-      togglePause();
-      break;
-  }
-});
-
-startScreen.addEventListener('click', start);
-
-document.addEventListener('click', (e) => {
-  if (!isRunning) return;
-  togglePause();
-});
-</script>
-
+<script type="module" src="app.js"></script>
 </body>
 </html>
