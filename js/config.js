@@ -44,6 +44,6 @@ export const CONFIG = {
   app: {
     title: 'Our Family Album',
     subtitle: 'Photos & Memories',
-    frameImage: 'frame.png',
+    frameImage: 'assets/frame.png',
   },
 };

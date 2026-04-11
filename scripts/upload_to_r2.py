@@ -36,8 +36,8 @@ Setup
 
 Usage
 -----
-  python upload_to_r2.py              # upload all new images
-  python upload_to_r2.py --dry-run    # preview what would be uploaded
+  python scripts/upload_to_r2.py              # upload all new images
+  python scripts/upload_to_r2.py --dry-run    # preview what would be uploaded
 """
 
 import argparse
@@ -48,6 +48,10 @@ import os
 import sys
 import time
 from pathlib import Path
+
+# Always resolve paths relative to the project root.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)
 
 try:
     import boto3
