@@ -1,0 +1,9 @@
+name = "family-album-api"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+account_id = "6404a2d4d7c4c758d8eaf0c6fc972241"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "family-album"
+database_id = "5b5b4e86-dfb8-4b1a-b0d2-c2229fa58710"

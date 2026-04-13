@@ -3,16 +3,16 @@
  *
  * Update these settings for your deployment:
  * - Set imageSource to 'r2' and fill in R2 details for production
- * - Fill in Firebase config for shared annotations
- * - Leave Firebase apiKey empty to use localStorage (single device only)
+ * - Set api.workerUrl to your Cloudflare Worker URL for shared annotations
+ * - Leave workerUrl empty to use localStorage (single device only)
  */
 export const CONFIG = {
   // Image source: 'local' (./images/) or 'r2' (Cloudflare R2)
-  imageSource: 'local',
+  imageSource: 'r2',
 
   // Cloudflare R2 settings
   r2: {
-    publicUrl: '',       // e.g. 'https://photos.your-domain.com'
+    publicUrl: 'https://pub-68327dca334d42bf90cf87e6f62b96fe.r2.dev',
     fullPath: '/full',
     thumbPath: '/thumbs',
   },
@@ -21,14 +21,9 @@ export const CONFIG = {
   localImagePath: './images/',
   localThumbPath: './images/',
 
-  // Firebase configuration (leave apiKey empty to use localStorage)
-  firebase: {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    storageBucket: '',
-    messagingSenderId: '',
-    appId: '',
+  // Worker API configuration (leave workerUrl empty to use localStorage)
+  api: {
+    workerUrl: 'https://family-album-api.sameersegal.workers.dev',
   },
 
   // Slideshow settings

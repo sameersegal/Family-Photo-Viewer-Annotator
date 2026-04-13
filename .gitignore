@@ -13,6 +13,7 @@ annotations.json
 clusters.json
 clusters_raw.txt
 .upload_state.json
+.batch_state.json
 
 # Build artifacts
 slideshow.html
@@ -22,6 +23,10 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Cloudflare Worker
+worker/node_modules/
+worker/.wrangler/
 
 # OS
 .DS_Store

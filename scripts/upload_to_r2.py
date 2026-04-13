@@ -53,6 +53,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 os.chdir(PROJECT_ROOT)
 
+# Load .env file if present
+_env_path = PROJECT_ROOT / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _, _val = _line.partition("=")
+            os.environ.setdefault(_key.strip(), _val.strip())
+
 try:
     import boto3
     from botocore.config import Config as BotoConfig
@@ -265,6 +274,12 @@ def main() -> None:
         action="store_true",
         help="Preview what would be uploaded without making any changes.",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Upload only the first N images (0 = all).",
+    )
     args = parser.parse_args()
     dry_run: bool = args.dry_run
 
@@ -286,6 +301,8 @@ def main() -> None:
 
     # --- Collect images ----------------------------------------------------
     images = collect_images()
+    if args.limit > 0:
+        images = images[:args.limit]
     if not images:
         print(f"No images found in ./{IMAGES_DIR}/")
         print("Place your photos there and run again.")

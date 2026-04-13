@@ -25,6 +25,7 @@ import base64
 import json
 import mimetypes
 import os
+import random
 import sys
 import time
 from pathlib import Path
@@ -32,6 +33,15 @@ from pathlib import Path
 # Always resolve paths relative to the project root.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 os.chdir(PROJECT_ROOT)
+
+# Load .env file if present (for ANTHROPIC_API_KEY etc.)
+_env_path = PROJECT_ROOT / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _, _val = _line.partition("=")
+            os.environ.setdefault(_key.strip(), _val.strip())
 
 try:
     import anthropic
@@ -49,6 +59,7 @@ IMAGES_DIR = Path("images")
 ANNOTATIONS_FILE = Path("annotations.json")
 CLUSTERS_FILE = Path("clusters.json")
 FAMILY_CONTEXT_FILE = Path("family_context.md")
+BATCH_STATE_FILE = Path(".batch_state.json")
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}
 
@@ -211,18 +222,20 @@ def save_clusters(clusters: dict) -> None:
     )
 
 
-def estimate_cost(num_photos: int) -> dict:
+def estimate_cost(num_photos: int, batch: bool = False) -> dict:
     """Estimate API cost for annotating N photos."""
     input_tokens = num_photos * (ESTIMATED_IMAGE_TOKENS + ESTIMATED_PROMPT_TOKENS)
     output_tokens = num_photos * ESTIMATED_OUTPUT_TOKENS
-    input_cost = (input_tokens / 1_000_000) * INPUT_COST_PER_M
-    output_cost = (output_tokens / 1_000_000) * OUTPUT_COST_PER_M
+    discount = 0.5 if batch else 1.0
+    input_cost = (input_tokens / 1_000_000) * INPUT_COST_PER_M * discount
+    output_cost = (output_tokens / 1_000_000) * OUTPUT_COST_PER_M * discount
     total_cost = input_cost + output_cost
     return {
         "num_photos": num_photos,
         "estimated_input_tokens": input_tokens,
         "estimated_output_tokens": output_tokens,
         "estimated_cost_usd": round(total_cost, 4),
+        "batch": batch,
     }
 
 
@@ -263,11 +276,12 @@ def format_duration(seconds: float) -> str:
 # Pass 1: Annotate individual photos
 # ---------------------------------------------------------------------------
 
-def annotate_photos(dry_run: bool = False) -> None:
+def annotate_photos(dry_run: bool = False, limit: int = 0) -> None:
     """
     Pass 1: Send each image to Claude for individual annotation.
 
     Supports resumption by skipping photos already present in annotations.json.
+    When limit > 0, randomly samples that many unannotated photos.
     """
     images = get_image_files()
     if not images:
@@ -280,6 +294,12 @@ def annotate_photos(dry_run: bool = False) -> None:
     # Determine which photos still need annotation
     remaining = [img for img in images if img.name not in annotations]
     already_done = len(images) - len(remaining)
+
+    # Random sample if --limit is specified
+    if limit and limit < len(remaining):
+        remaining = sorted(random.sample(remaining, limit))
+        print(f"  (Randomly sampled {limit} photos from {len(images) - already_done} remaining)")
+        print()
 
     print(f"{'=' * 60}")
     print(f"  AI Photo Annotation — Pass 1")
@@ -420,6 +440,220 @@ def annotate_photos(dry_run: bool = False) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Batch mode: Submit & retrieve via Message Batches API (50% cheaper)
+# ---------------------------------------------------------------------------
+
+def batch_submit(dry_run: bool = False, limit: int = 0) -> None:
+    """Submit photos as a Message Batch for async processing at 50% cost."""
+    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+    from anthropic.types.messages.batch_create_params import Request
+
+    images = get_image_files()
+    if not images:
+        print("No images found in ./images/")
+        return
+
+    annotations = load_annotations()
+    family_context = load_family_context()
+
+    remaining = [img for img in images if img.name not in annotations]
+    already_done = len(images) - len(remaining)
+
+    if limit and limit < len(remaining):
+        remaining = sorted(random.sample(remaining, limit))
+        print(f"  (Randomly sampled {limit} photos from {len(images) - already_done} remaining)")
+        print()
+
+    print(f"{'=' * 60}")
+    print(f"  AI Photo Annotation — Batch Submit")
+    print(f"{'=' * 60}")
+    print(f"  Total images found:     {len(images)}")
+    print(f"  Already annotated:      {already_done}")
+    print(f"  Submitting to batch:    {len(remaining)}")
+    print()
+
+    if not remaining:
+        print("All photos are already annotated. Nothing to do.")
+        return
+
+    cost = estimate_cost(len(remaining), batch=True)
+    print(f"  Estimated API usage (50% batch discount):")
+    print(f"    Input tokens:  ~{cost['estimated_input_tokens']:,}")
+    print(f"    Output tokens: ~{cost['estimated_output_tokens']:,}")
+    print(f"    Estimated cost: ~${cost['estimated_cost_usd']:.4f}")
+    print()
+
+    if dry_run:
+        print("[DRY RUN] Would submit the above as a batch. Exiting.")
+        return
+
+    prompt_text = ANNOTATION_USER_PROMPT_TEMPLATE.format(
+        family_context=family_context
+    )
+
+    print("Encoding images and building batch requests...")
+    requests = []
+    for i, image_path in enumerate(remaining, 1):
+        filename = image_path.name
+        # custom_id must be alphanumeric, hyphens, underscores (1-64 chars)
+        custom_id = filename.replace(".", "_")[:64]
+        b64_data, media_type = encode_image_base64(image_path)
+
+        requests.append(
+            Request(
+                custom_id=custom_id,
+                params=MessageCreateParamsNonStreaming(
+                    model=MODEL,
+                    max_tokens=1024,
+                    system=ANNOTATION_SYSTEM_PROMPT,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": b64_data,
+                                    },
+                                },
+                                {
+                                    "type": "text",
+                                    "text": prompt_text,
+                                },
+                            ],
+                        }
+                    ],
+                ),
+            )
+        )
+
+        if i % 50 == 0 or i == len(remaining):
+            print(f"  Encoded {i}/{len(remaining)} images...")
+
+    print()
+    print(f"Submitting batch of {len(requests)} requests...")
+
+    client = anthropic.Anthropic()
+    message_batch = client.messages.batches.create(requests=requests)
+
+    # Save batch state so we can retrieve results later
+    # Map custom_id back to original filename
+    id_to_filename = {}
+    for image_path in remaining:
+        custom_id = image_path.name.replace(".", "_")[:64]
+        id_to_filename[custom_id] = image_path.name
+
+    batch_state = {
+        "batch_id": message_batch.id,
+        "created_at": message_batch.created_at.isoformat() if hasattr(message_batch.created_at, 'isoformat') else str(message_batch.created_at),
+        "num_requests": len(requests),
+        "id_to_filename": id_to_filename,
+    }
+    BATCH_STATE_FILE.write_text(
+        json.dumps(batch_state, indent=2) + "\n", encoding="utf-8"
+    )
+
+    print()
+    print(f"{'=' * 60}")
+    print(f"  Batch submitted successfully!")
+    print(f"{'=' * 60}")
+    print(f"  Batch ID:   {message_batch.id}")
+    print(f"  Requests:   {len(requests)}")
+    print(f"  Status:     {message_batch.processing_status}")
+    print()
+    print(f"  Results typically ready within 1 hour (max 24h).")
+    print(f"  Check status / download results with:")
+    print(f"    python scripts/ai_annotate.py --batch-results")
+    print()
+
+
+def batch_results() -> None:
+    """Poll for batch completion and download results into annotations.json."""
+    if not BATCH_STATE_FILE.exists():
+        print("ERROR: No pending batch found (.batch_state.json missing).")
+        print("Submit a batch first with:  python scripts/ai_annotate.py --batch")
+        sys.exit(1)
+
+    batch_state = json.loads(BATCH_STATE_FILE.read_text(encoding="utf-8"))
+    batch_id = batch_state["batch_id"]
+    id_to_filename = batch_state["id_to_filename"]
+
+    print(f"{'=' * 60}")
+    print(f"  Checking batch: {batch_id}")
+    print(f"{'=' * 60}")
+    print()
+
+    client = anthropic.Anthropic()
+    message_batch = client.messages.batches.retrieve(batch_id)
+
+    counts = message_batch.request_counts
+    total = counts.processing + counts.succeeded + counts.errored + counts.canceled + counts.expired
+    print(f"  Status:     {message_batch.processing_status}")
+    print(f"  Processing: {counts.processing}/{total}")
+    print(f"  Succeeded:  {counts.succeeded}")
+    print(f"  Errored:    {counts.errored}")
+    print(f"  Canceled:   {counts.canceled}")
+    print(f"  Expired:    {counts.expired}")
+    print()
+
+    if message_batch.processing_status != "ended":
+        print(f"  Batch is still processing. Try again later.")
+        print(f"    python scripts/ai_annotate.py --batch-results")
+        return
+
+    # Download results
+    print("Downloading results...")
+    annotations = load_annotations()
+    success_count = 0
+    error_count = 0
+
+    for result in client.messages.batches.results(batch_id):
+        custom_id = result.custom_id
+        filename = id_to_filename.get(custom_id, custom_id)
+
+        if result.result.type == "succeeded":
+            response_text = result.result.message.content[0].text
+            parsed = parse_json_response(response_text)
+            if parsed is None:
+                print(f"  WARNING: JSON parse failure for {filename}")
+                annotations[filename] = {
+                    "_raw_response": response_text,
+                    "_error": "JSON parse failure",
+                }
+                error_count += 1
+            else:
+                annotations[filename] = parsed
+                success_count += 1
+                decade = parsed.get("decade", "?")
+                scene = parsed.get("scene", "")[:60]
+                print(f"  {filename}: {decade} | {scene}...")
+        elif result.result.type == "errored":
+            print(f"  ERROR: {filename}: {result.result.error}")
+            error_count += 1
+        elif result.result.type == "expired":
+            print(f"  EXPIRED: {filename}")
+            error_count += 1
+        elif result.result.type == "canceled":
+            print(f"  CANCELED: {filename}")
+
+    save_annotations(annotations)
+
+    # Clean up batch state
+    BATCH_STATE_FILE.unlink(missing_ok=True)
+
+    print()
+    print(f"{'=' * 60}")
+    print(f"  Batch results downloaded")
+    print(f"{'=' * 60}")
+    print(f"  Succeeded: {success_count}")
+    print(f"  Errors:    {error_count}")
+    print(f"  Results saved to: {ANNOTATIONS_FILE}")
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Pass 2: Cluster photos by event/trip
 # ---------------------------------------------------------------------------
 
@@ -554,9 +788,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-  python scripts/ai_annotate.py                 Annotate all photos (Pass 1)
-  python scripts/ai_annotate.py --dry-run       Show what would be done without calling API
-  python scripts/ai_annotate.py --cluster       Cluster photos by event/trip (Pass 2)
+  python scripts/ai_annotate.py                     Annotate all photos (real-time)
+  python scripts/ai_annotate.py --batch --limit 20  Submit 20 photos as batch (50%% cheaper)
+  python scripts/ai_annotate.py --batch-results     Download batch results
+  python scripts/ai_annotate.py --dry-run            Show cost estimate without calling API
+  python scripts/ai_annotate.py --cluster            Cluster photos by event/trip (Pass 2)
 
 The script reads images from ./images/ and saves results to annotations.json.
 For better results, create a family_context.md file (see family_context_template.md).
@@ -569,15 +805,30 @@ For better results, create a family_context.md file (see family_context_template
         help="Run Pass 2: cluster annotated photos by event/trip/occasion",
     )
     parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Submit photos as a Message Batch (50%% cheaper, async processing)",
+    )
+    parser.add_argument(
+        "--batch-results",
+        action="store_true",
+        help="Check status and download results of a previously submitted batch",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be done and estimated cost, without calling the API",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Randomly sample N unannotated photos instead of processing all",
+    )
 
     args = parser.parse_args()
 
-    # Check for API key early
-    import os
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("ERROR: ANTHROPIC_API_KEY environment variable not set.")
         print()
@@ -587,13 +838,17 @@ For better results, create a family_context.md file (see family_context_template
         print("Get your API key from: https://console.anthropic.com/settings/keys")
         sys.exit(1)
 
-    if args.cluster:
+    if args.batch_results:
+        batch_results()
+    elif args.batch:
+        batch_submit(dry_run=args.dry_run, limit=args.limit)
+    elif args.cluster:
         if args.dry_run:
             print("Dry-run is only supported for Pass 1 (annotation).")
             sys.exit(1)
         cluster_photos()
     else:
-        annotate_photos(dry_run=args.dry_run)
+        annotate_photos(dry_run=args.dry_run, limit=args.limit)
 
 
 if __name__ == "__main__":

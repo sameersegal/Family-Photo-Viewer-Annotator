@@ -1,7 +1,7 @@
 /**
  * Family Photo Album - Data Persistence Layer
  *
- * Uses Firebase Firestore when configured, falls back to localStorage.
+ * Uses Cloudflare Worker API when configured, falls back to localStorage.
  * Provides a unified interface for annotations, people tags, and anecdotes.
  */
 import { CONFIG } from './config.js';
@@ -10,30 +10,44 @@ const STORAGE_KEY = 'familyAlbumData';
 const USER_KEY = 'familyAlbumUser';
 const PEOPLE_KEY = 'familyAlbumPeople';
 
-let firestore = null;
-let fs = null; // cached Firestore module functions
-let useFirebase = false;
+let useApi = false;
+let API_BASE = '';
 
 // ============================================================
 // INITIALIZATION
 // ============================================================
 export async function init() {
-  const fc = CONFIG.firebase;
-  if (fc.apiKey) {
+  const workerUrl = CONFIG.api?.workerUrl;
+  if (workerUrl) {
     try {
-      const appMod = await import('https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js');
-      const fsMod = await import('https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js');
-      const app = appMod.initializeApp(fc);
-      firestore = fsMod.getFirestore(app);
-      fs = fsMod;
-      useFirebase = true;
-      console.log('[store] Firebase Firestore connected');
+      const resp = await fetch(`${workerUrl}/api/people`, { method: 'GET' });
+      if (resp.ok) {
+        useApi = true;
+        API_BASE = workerUrl;
+        console.log('[store] Worker API connected');
+      } else {
+        console.warn('[store] Worker API returned', resp.status, '— using localStorage');
+      }
     } catch (e) {
-      console.warn('[store] Firebase init failed, using localStorage:', e);
+      console.warn('[store] Worker API unreachable, using localStorage:', e.message);
     }
   } else {
-    console.log('[store] No Firebase config — using localStorage');
+    console.log('[store] No workerUrl configured — using localStorage');
   }
+}
+
+// ============================================================
+// API FETCH HELPER
+// ============================================================
+async function apiFetch(path, options = {}) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!resp.ok) {
+    throw new Error(`API error ${resp.status}: ${await resp.text()}`);
+  }
+  return resp.json();
 }
 
 // ============================================================
@@ -66,17 +80,19 @@ function createEmptyAnnotation() {
 // PHOTO ANNOTATION CRUD
 // ============================================================
 export async function getAnnotation(photoId) {
-  if (useFirebase) {
-    const snap = await fs.getDoc(fs.doc(firestore, 'photos', photoId));
-    return snap.exists() ? snap.data() : createEmptyAnnotation();
+  if (useApi) {
+    return apiFetch(`/api/photos/${encodeURIComponent(photoId)}`);
   }
   const data = getLocalData();
   return data[photoId] || createEmptyAnnotation();
 }
 
 export async function saveAnnotation(photoId, updates) {
-  if (useFirebase) {
-    await fs.setDoc(fs.doc(firestore, 'photos', photoId), updates, { merge: true });
+  if (useApi) {
+    await apiFetch(`/api/photos/${encodeURIComponent(photoId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
     return;
   }
   const data = getLocalData();
@@ -85,11 +101,8 @@ export async function saveAnnotation(photoId, updates) {
 }
 
 export async function getAllAnnotations() {
-  if (useFirebase) {
-    const snap = await fs.getDocs(fs.collection(firestore, 'photos'));
-    const result = {};
-    snap.docs.forEach(d => { result[d.id] = d.data(); });
-    return result;
+  if (useApi) {
+    return apiFetch('/api/photos');
   }
   return getLocalData();
 }
@@ -98,6 +111,13 @@ export async function getAllAnnotations() {
 // CONFIRM / CORRECT AI ANNOTATION
 // ============================================================
 export async function confirmAnnotation(photoId) {
+  if (useApi) {
+    await apiFetch(`/api/photos/${encodeURIComponent(photoId)}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmedBy: getCurrentUser() }),
+    });
+    return;
+  }
   await saveAnnotation(photoId, {
     confirmed: true,
     confirmedBy: getCurrentUser(),
@@ -106,6 +126,13 @@ export async function confirmAnnotation(photoId) {
 }
 
 export async function saveCorrection(photoId, corrections) {
+  if (useApi) {
+    await apiFetch(`/api/photos/${encodeURIComponent(photoId)}/corrections`, {
+      method: 'POST',
+      body: JSON.stringify({ corrections, confirmedBy: getCurrentUser() }),
+    });
+    return;
+  }
   const annotation = await getAnnotation(photoId);
   const merged = { ...(annotation.corrections || {}), ...corrections };
   await saveAnnotation(photoId, {
@@ -120,6 +147,12 @@ export async function saveCorrection(photoId, corrections) {
 // ANECDOTES
 // ============================================================
 export async function addAnecdote(photoId, author, text) {
+  if (useApi) {
+    return apiFetch(`/api/photos/${encodeURIComponent(photoId)}/anecdotes`, {
+      method: 'POST',
+      body: JSON.stringify({ author, text }),
+    });
+  }
   const annotation = await getAnnotation(photoId);
   const anecdotes = annotation.anecdotes || [];
   anecdotes.push({ author, text, timestamp: new Date().toISOString() });
@@ -128,6 +161,11 @@ export async function addAnecdote(photoId, author, text) {
 }
 
 export async function deleteAnecdote(photoId, index) {
+  if (useApi) {
+    return apiFetch(`/api/photos/${encodeURIComponent(photoId)}/anecdotes/${index}`, {
+      method: 'DELETE',
+    });
+  }
   const annotation = await getAnnotation(photoId);
   const anecdotes = annotation.anecdotes || [];
   anecdotes.splice(index, 1);
@@ -141,6 +179,12 @@ export async function deleteAnecdote(photoId, index) {
 export async function tagPerson(photoId, name) {
   const normalized = name.trim();
   if (!normalized) return;
+  if (useApi) {
+    return apiFetch(`/api/photos/${encodeURIComponent(photoId)}/people`, {
+      method: 'POST',
+      body: JSON.stringify({ name: normalized, addedBy: getCurrentUser() }),
+    });
+  }
   const annotation = await getAnnotation(photoId);
   const people = annotation.people || [];
   if (!people.includes(normalized)) {
@@ -152,6 +196,12 @@ export async function tagPerson(photoId, name) {
 }
 
 export async function untagPerson(photoId, name) {
+  if (useApi) {
+    return apiFetch(
+      `/api/photos/${encodeURIComponent(photoId)}/people/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    );
+  }
   const annotation = await getAnnotation(photoId);
   const people = (annotation.people || []).filter(p => p !== name);
   await saveAnnotation(photoId, { people });
@@ -162,14 +212,7 @@ export async function untagPerson(photoId, name) {
 // PEOPLE DIRECTORY
 // ============================================================
 async function addToPeopleDirectory(name) {
-  if (useFirebase) {
-    await fs.setDoc(
-      fs.doc(firestore, 'people', name),
-      { name, addedBy: getCurrentUser(), addedAt: new Date().toISOString() },
-      { merge: true }
-    );
-    return;
-  }
+  // Only used in localStorage path; API handles this server-side
   const people = JSON.parse(localStorage.getItem(PEOPLE_KEY) || '[]');
   if (!people.includes(name)) {
     people.push(name);
@@ -178,9 +221,8 @@ async function addToPeopleDirectory(name) {
 }
 
 export async function getAllPeople() {
-  if (useFirebase) {
-    const snap = await fs.getDocs(fs.collection(firestore, 'people'));
-    return snap.docs.map(d => d.data().name).sort();
+  if (useApi) {
+    return apiFetch('/api/people');
   }
   return JSON.parse(localStorage.getItem(PEOPLE_KEY) || '[]').sort();
 }
@@ -189,6 +231,13 @@ export async function getAllPeople() {
 // AI ANNOTATIONS IMPORT
 // ============================================================
 export async function importAIAnnotations(aiData) {
+  if (useApi) {
+    const result = await apiFetch('/api/import', {
+      method: 'POST',
+      body: JSON.stringify(aiData),
+    });
+    return result.imported;
+  }
   let imported = 0;
   for (const [photoId, ai] of Object.entries(aiData)) {
     const existing = await getAnnotation(photoId);
