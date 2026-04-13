@@ -62,7 +62,11 @@ function getImageUrl(filename, thumb = false) {
 // ============================================================
 async function loadManifest() {
   try {
-    const resp = await fetch('./manifest.json');
+    // When using R2, fetch manifest from the R2 bucket directly
+    const url = CONFIG.imageSource === 'r2'
+      ? `${CONFIG.r2.publicUrl}/manifest.json`
+      : './manifest.json';
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error('No manifest');
     const data = await resp.json();
     return data.images || [];

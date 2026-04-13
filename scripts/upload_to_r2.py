@@ -208,21 +208,12 @@ def content_type_for(path: Path) -> str:
 
 
 def build_manifest(state: dict) -> dict:
-    """Build the manifest.json structure from upload state."""
-    images = []
-    for filename, info in sorted(state.items()):
-        entry = {
-            "filename": filename,
-            "full_key": f"full/{filename}",
-            "thumb_key": f"thumbs/{filename}",
-        }
-        if R2_PUBLIC_URL:
-            base = R2_PUBLIC_URL.rstrip("/")
-            entry["full_url"] = f"{base}/full/{filename}"
-            entry["thumb_url"] = f"{base}/thumbs/{filename}"
-        if "md5" in info:
-            entry["md5"] = info["md5"]
-        images.append(entry)
+    """Build the manifest.json structure from upload state.
+
+    Returns a simple list of filenames (matching build.py format) so the
+    frontend can construct URLs via config.js settings.
+    """
+    images = sorted(state.keys())
     return {"images": images, "count": len(images)}
 
 
