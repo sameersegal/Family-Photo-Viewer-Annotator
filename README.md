@@ -2,6 +2,12 @@
 
 A web application for browsing, annotating, and sharing stories about family photos. Features AI-powered photo descriptions using Claude's vision API, collaborative people tagging, and a full-screen slideshow mode.
 
+![Gallery View](assets/screenshots/gallery.jpg)
+*Gallery view with search and people filter chips*
+
+![Detail View](assets/screenshots/detail.jpg)
+*Detail view with annotation sidebar, people tagging, and stories*
+
 ## Live Site
 
 - **App**: https://family-album-a2m.pages.dev/
