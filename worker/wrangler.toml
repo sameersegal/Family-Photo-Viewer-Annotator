@@ -12,17 +12,19 @@ database_id = "5b5b4e86-dfb8-4b1a-b0d2-c2229fa58710"
 # ------------------------------------------------------------
 # Cloudflare Access (Email OTP) — authentication config
 # ------------------------------------------------------------
-# After creating the Access application in the Zero Trust dashboard,
-# fill these in:
-#   - ACCESS_TEAM_DOMAIN: your team domain, e.g. "sameersegal.cloudflareaccess.com"
-#   - ACCESS_AUD:         the Application Audience (AUD) Tag shown on
-#                         the Access application overview page
+# ACCESS_TEAM_DOMAIN and ACCESS_AUD are NOT kept in this file because
+# the repo is public. They are stored as encrypted Wrangler secrets in
+# Cloudflare's infrastructure. Set them once with:
 #
-# ALLOWED_ORIGINS is a comma-separated list of browser origins allowed
-# to call this API with credentials. Include every Pages domain you use.
+#   cd worker
+#   npx wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. kkalyanpurs.cloudflareaccess.com
+#   npx wrangler secret put ACCESS_AUD           # AUD Tag from Zero Trust dashboard
+#
+# Secrets persist across deploys, so CI doesn't need to know about them.
+#
+# ALLOWED_ORIGINS is just a CORS allow-list of public URLs — not
+# sensitive, so it stays in the repo for clarity.
 [vars]
-ACCESS_TEAM_DOMAIN = "kkalyanpurs.cloudflareaccess.com"
-ACCESS_AUD = "c0849918d5c46dae7907ccba3a140eb991389ffb7c8a6ed71ab84a1d604383ed"
 ALLOWED_ORIGINS = "https://family-album-a2m.pages.dev,http://localhost:8765"
 
 # ------------------------------------------------------------

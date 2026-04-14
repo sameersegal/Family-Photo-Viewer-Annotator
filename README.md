@@ -186,13 +186,15 @@ the Cloudflare dashboard.
    every family email (or use `Emails ending in` for a domain). This is
    Cloudflare's own gate — only these addresses can request a code.
 4. On the application **Overview** tab, copy the **AUD Tag** and your
-   team domain (e.g. `yourteam.cloudflareaccess.com`). Set them in
-   `worker/wrangler.toml`:
-   ```toml
-   [vars]
-   ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"
-   ACCESS_AUD = "abc123..."  # AUD Tag from dashboard
+   team domain (e.g. `yourteam.cloudflareaccess.com`). Because this repo
+   is public, these values live in Wrangler secrets, not `wrangler.toml`:
+   ```bash
+   cd worker
+   npx wrangler secret put ACCESS_TEAM_DOMAIN   # paste team domain
+   npx wrangler secret put ACCESS_AUD           # paste AUD Tag
    ```
+   Secrets persist across deploys — you only run this once (and again
+   if you ever rotate the values).
 5. (Optional, senior-friendly) In the application's **Appearance** tab,
    set a friendly title like "Welcome to the Family Album", add your
    logo, and include short instructions.
