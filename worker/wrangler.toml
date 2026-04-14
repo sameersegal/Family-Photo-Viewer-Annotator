@@ -21,8 +21,8 @@ database_id = "5b5b4e86-dfb8-4b1a-b0d2-c2229fa58710"
 # ALLOWED_ORIGINS is a comma-separated list of browser origins allowed
 # to call this API with credentials. Include every Pages domain you use.
 [vars]
-ACCESS_TEAM_DOMAIN = ""
-ACCESS_AUD = ""
+ACCESS_TEAM_DOMAIN = "kkalyanpurs.cloudflareaccess.com"
+ACCESS_AUD = "c0849918d5c46dae7907ccba3a140eb991389ffb7c8a6ed71ab84a1d604383ed"
 ALLOWED_ORIGINS = "https://family-album-a2m.pages.dev,http://localhost:8765"
 
 # ------------------------------------------------------------
