@@ -163,62 +163,59 @@ Set this in **Cloudflare Dashboard > R2 > family-photos > Settings > CORS Policy
 
 ### Authentication (Cloudflare Access + Email OTP)
 
-The app is gated by Cloudflare Access at the edge — every visitor must
-sign in with a one-time 6-digit code sent to their email before the
-Pages site or the Worker API will serve anything. On top of that, the
-Worker cross-checks the authenticated email against an `allowed_users`
-table in D1 so you can add or remove family members without touching
-the Cloudflare dashboard.
+The app is gated by Cloudflare Access at the edge. Every visitor must
+sign in with a 6-digit code sent to their email before the Pages site
+or the Worker API will serve anything. **The Access application's
+policy is the single source of truth for who's allowed in** — manage
+the family list in the Zero Trust dashboard.
+
+On first login, the user is prompted for a display name (used for
+attribution on stories and tags). Names are stored in a `users` table
+in D1 along with a `role` column (`admin` or `member`). Everyone
+defaults to `member`; promote to `admin` manually when needed (admins
+can delete anyone's anecdote, not just their own).
 
 **One-time setup in the Zero Trust dashboard:**
 
-1. Go to **Zero Trust > Settings > Authentication** and add a
-   **One-time PIN** login method. No extra config needed — this sends
-   a 6-digit code to any email address.
+1. Go to **Zero Trust > Settings > Authentication** and enable the
+   **One-time PIN** login method. No extra config needed.
 2. Go to **Access > Applications > Add an application > Self-hosted**
-   and create a single application that covers both the Pages and Worker
-   domains (so they share the Access session):
-   - Application domain 1: `family-album-a2m.pages.dev`
-   - Application domain 2: `family-album-api.sameersegal.workers.dev`
-   - Session duration: **30 days** (seniors shouldn't need to re-auth weekly)
-   - Identity providers: One-time PIN
-3. Add a policy with **Action: Allow** and **Include: Emails**, listing
-   every family email (or use `Emails ending in` for a domain). This is
-   Cloudflare's own gate — only these addresses can request a code.
-4. On the application **Overview** tab, copy the **AUD Tag** and your
-   team domain (e.g. `yourteam.cloudflareaccess.com`). Because this repo
-   is public, these values live in Wrangler secrets, not `wrangler.toml`:
+   and create one application covering both domains so they share a
+   session:
+   - Application domains: `family-album-a2m.pages.dev` and
+     `family-album-api.sameersegal.workers.dev`
+   - Session duration: **1 month** (seniors shouldn't re-auth weekly)
+   - Identity providers: One-time PIN only
+   - Auto-redirect to identity: on
+   - CORS preflight bypass: on (required for cross-origin API calls)
+3. Add an Allow policy with **Include → Emails**, listing every family
+   member. This is the only gate — emails not listed here simply cannot
+   log in.
+4. Copy the **AUD Tag** and team domain from the Overview tab and store
+   them as Wrangler secrets (repo is public, so these don't live in
+   `wrangler.toml`):
    ```bash
    cd worker
    npx wrangler secret put ACCESS_TEAM_DOMAIN   # paste team domain
    npx wrangler secret put ACCESS_AUD           # paste AUD Tag
    ```
-   Secrets persist across deploys — you only run this once (and again
-   if you ever rotate the values).
-5. (Optional, senior-friendly) In the application's **Appearance** tab,
-   set a friendly title like "Welcome to the Family Album", add your
-   logo, and include short instructions.
 
-**Managing the family allow-list (the D1 table you control):**
+**Promoting someone to admin:**
 
 ```bash
-# Add a family member
+# First have them log in at least once — that creates their users row.
 npx wrangler d1 execute family-album --remote --command \
-  "INSERT INTO allowed_users (email, name, role) VALUES ('grandma@example.com', 'Grandma', 'member');"
+  "UPDATE users SET role='admin' WHERE email='you@example.com';"
 
-# List everyone with access
+# See who's logged in and what role they have
 npx wrangler d1 execute family-album --remote --command \
-  "SELECT email, name, role FROM allowed_users ORDER BY added_at;"
-
-# Remove someone
-npx wrangler d1 execute family-album --remote --command \
-  "DELETE FROM allowed_users WHERE email = 'former@example.com';"
+  "SELECT email, name, role, created_at FROM users ORDER BY created_at;"
 ```
 
-Roles: `admin` (can delete any anecdote) or `member` (can only delete
-their own). Remember to also update the Access policy in the Zero Trust
-dashboard if you're adding someone whose email isn't covered yet —
-both gates must allow them.
+**Adding or removing family members:** edit the Access application's
+policy in the Zero Trust dashboard. Removal there revokes their ability
+to log in immediately; their existing `users` row is harmless and can
+be left in place.
 
 ### Deploying the Worker Manually
 

@@ -581,13 +581,12 @@ function hideUserModal() {
   $('#user-modal').classList.remove('active');
 }
 
-function submitUserName() {
+async function submitUserName() {
   const name = $('#user-name-input').value.trim();
-  if (name) {
-    store.setCurrentUser(name);
-    $('#user-name-display').textContent = name;
-    hideUserModal();
-  }
+  if (!name) return;
+  await store.setCurrentUser(name);
+  $('#user-name-display').textContent = name;
+  hideUserModal();
 }
 
 // ============================================================
@@ -792,10 +791,6 @@ async function init() {
   // "what's your name?" prompt.
   const auth = await store.init();
 
-  if (auth.mode === 'forbidden') {
-    showNotAuthorized(auth.error);
-    return;
-  }
   if (auth.mode === 'error') {
     showNotAuthorized(
       `We couldn't reach the album right now. Please try again in a minute. (${auth.error})`
@@ -803,18 +798,13 @@ async function init() {
     return;
   }
 
-  if (auth.mode === 'api') {
-    // Signed in via Access — identity is known, hide the name-change UI.
-    $('#user-name-display').textContent = auth.user.name;
-    $('#change-user').style.display = 'none';
+  // 'api' (signed in via Access) and 'local' (localStorage) modes both
+  // need a display name. Prompt on first login, show existing otherwise.
+  const currentName = store.getCurrentUser();
+  if (store.needsDisplayName()) {
+    showUserModal();
   } else {
-    // localStorage mode — ask for a display name if we don't have one.
-    const user = store.getCurrentUser();
-    if (user) {
-      $('#user-name-display').textContent = user;
-    } else {
-      showUserModal();
-    }
+    $('#user-name-display').textContent = currentName;
   }
 
   state.images = await loadManifest();
