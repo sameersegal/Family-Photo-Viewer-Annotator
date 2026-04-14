@@ -6,6 +6,9 @@
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy"
   },
+  "dependencies": {
+    "jose": "^5.9.6"
+  },
   "devDependencies": {
     "wrangler": "^4.81.1"
   }

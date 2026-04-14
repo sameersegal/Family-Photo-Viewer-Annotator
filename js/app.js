@@ -330,9 +330,18 @@ function renderAnecdotes(ann) {
     return;
   }
 
+  const currentEmail = store.getCurrentUserEmail();
+  const currentName = store.getCurrentUser();
+  const isAdmin = store.getCurrentUserRole() === 'admin';
+
   container.innerHTML = anecdotes.map((a, i) => {
     const date = new Date(a.timestamp).toLocaleDateString();
-    const canDelete = a.author === store.getCurrentUser();
+    // Prefer email match (reliable) and fall back to name (legacy records
+    // and localStorage-only mode).
+    const isMine = a.authorEmail
+      ? a.authorEmail === currentEmail
+      : a.author === currentName;
+    const canDelete = isMine || isAdmin;
     return `<div class="anecdote-card">
       <div class="anecdote-text">\u201C${escapeHtml(a.text)}\u201D</div>
       <div class="anecdote-meta">
@@ -756,19 +765,57 @@ function navigateDetail(direction) {
 }
 
 // ============================================================
+// NOT-AUTHORIZED SCREEN
+// ============================================================
+function showNotAuthorized(message) {
+  document.body.innerHTML = `
+    <div class="auth-gate">
+      <div class="auth-gate-card">
+        <h1>Welcome to the Family Album</h1>
+        <p class="auth-gate-message">${escapeHtml(message)}</p>
+        <p class="auth-gate-hint">
+          If you believe this is a mistake, please ask the album owner
+          to add your email to the family list.
+        </p>
+      </div>
+    </div>`;
+}
+
+// ============================================================
 // INITIALIZATION
 // ============================================================
 async function init() {
   document.title = CONFIG.app.title;
 
-  const user = store.getCurrentUser();
-  if (user) {
-    $('#user-name-display').textContent = user;
-  } else {
-    showUserModal();
+  // Authenticate first. With a Worker API configured, identity comes
+  // from Cloudflare Access. Without one, fall back to the localStorage
+  // "what's your name?" prompt.
+  const auth = await store.init();
+
+  if (auth.mode === 'forbidden') {
+    showNotAuthorized(auth.error);
+    return;
+  }
+  if (auth.mode === 'error') {
+    showNotAuthorized(
+      `We couldn't reach the album right now. Please try again in a minute. (${auth.error})`
+    );
+    return;
   }
 
-  await store.init();
+  if (auth.mode === 'api') {
+    // Signed in via Access — identity is known, hide the name-change UI.
+    $('#user-name-display').textContent = auth.user.name;
+    $('#change-user').style.display = 'none';
+  } else {
+    // localStorage mode — ask for a display name if we don't have one.
+    const user = store.getCurrentUser();
+    if (user) {
+      $('#user-name-display').textContent = user;
+    } else {
+      showUserModal();
+    }
+  }
 
   state.images = await loadManifest();
   state.filteredImages = [...state.images];
