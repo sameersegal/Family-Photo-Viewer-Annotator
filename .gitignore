@@ -15,6 +15,14 @@ clusters_raw.txt
 .upload_state.json
 .batch_state.json
 
+# Local-AI pipeline artifacts (generated on the Spark; can be large)
+faces.json
+photo_people.json
+photo_faces.json
+.faces_state.json
+people/labels.yml
+people/montage/
+
 # Build artifacts
 slideshow.html
 

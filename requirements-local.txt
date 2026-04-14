@@ -1,0 +1,25 @@
+# Dependencies for the offline local-AI annotation pipeline.
+# Install these on the machine that runs the scripts (e.g. NVIDIA DGX Spark).
+#
+#   pip install -r requirements-local.txt
+#
+# The cloud-API path (scripts/ai_annotate.py) does NOT need these.
+
+# --- Face detection + embedding (scripts/faces_detect.py) ---
+# InsightFace bundles RetinaFace (detector) + ArcFace R100 (512-d embedder).
+insightface>=0.7.3
+opencv-python-headless>=4.8.0
+
+# Use onnxruntime-gpu on the Spark for GPU inference; fall back to
+# onnxruntime on CPU-only machines. Pip will refuse to install both.
+onnxruntime-gpu>=1.17.0 ; platform_machine != "arm64"
+onnxruntime>=1.17.0 ; platform_machine == "arm64"
+
+# --- Clustering (scripts/faces_cluster.py) ---
+hdbscan>=0.8.33
+numpy>=1.24
+
+# --- Local VLM client (scripts/annotate_local.py) ---
+# Talks to an Ollama server; no model weights pulled by pip.
+requests>=2.31
+Pillow>=10.0      # EXIF date extraction
