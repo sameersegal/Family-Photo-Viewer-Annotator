@@ -30,7 +30,7 @@ All three services are on Cloudflare's edge network. The frontend is a pure stat
 - **Gallery View** -- Browse photos in a responsive grid with full-text search and people filter chips
 - **Detail View** -- View a photo with its AI-generated description, tag people, and add stories/memories
 - **Slideshow** -- Full-screen auto-advancing slideshow with fade transitions and annotation overlays
-- **AI Annotations** -- Two-pass pipeline: individual photo descriptions, then event/trip clustering
+- **AI Annotations** -- Two-pass pipeline: individual photo descriptions, then event/trip clustering. Cloud (Claude) and a [local-AI alternative](docs/local-ai-pipeline.md) that learns family faces are both supported.
 - **Collaborative** -- Multiple family members can tag people, correct AI descriptions, and share anecdotes
 - **Flexible Storage** -- Works with local files or Cloudflare R2; Worker API or localStorage for data
 
@@ -56,11 +56,18 @@ All three services are on Cloudflare's edge network. The frontend is a pure stat
 │   ├── serve.py                # Local dev server (port 8765)
 │   ├── build.py                # Generate manifest.json (+ optional thumbnails)
 │   ├── ai_annotate.py          # AI photo annotation via Claude vision API
+│   ├── faces_detect.py         # Local pipeline: InsightFace detect + embed
+│   ├── faces_cluster.py        # Local pipeline: HDBSCAN clustering + montage
+│   ├── faces_label.py          # Local pipeline: apply labels.yml
+│   ├── annotate_local.py       # Local pipeline: VLM annotation via Ollama
 │   ├── download_images.py      # Download photos from Google Drive
 │   └── upload_to_r2.py         # Upload photos & thumbnails to Cloudflare R2
+├── docs/
+│   └── local-ai-pipeline.md    # Design + usage of the offline local-AI pipeline
 ├── .github/workflows/
 │   └── deploy.yml              # CI/CD: deploys Pages + Worker on push to main
 ├── family_context_template.md  # Template for family background info
+├── requirements-local.txt      # Python deps for the local-AI pipeline only
 └── .gitignore
 ```
 
@@ -107,6 +114,31 @@ python scripts/ai_annotate.py --cluster
 ```
 
 For better results, copy `family_context_template.md` to `family_context.md` and fill in details about your family members, known trips, and cultural context.
+
+### 5. (Optional) Use the local-AI pipeline instead
+
+Cloud VLMs produce generic descriptions ("two women in saris") because
+they don't know your family. If you have a local GPU box (e.g. an
+NVIDIA DGX Spark) you can run an offline pipeline that learns faces
+from your archive and produces family-specific annotations ("Ma and
+Priya sharing tea on the veranda"). It's a one-time setup plus a short
+human labeling step, then re-runs for free.
+
+```bash
+pip install -r requirements-local.txt
+ollama pull qwen2.5vl:7b
+
+python scripts/faces_detect.py        # detect + embed faces
+python scripts/faces_cluster.py       # cluster + generate labeling UI
+# open people/montage/index.html, edit people/labels.yml
+python scripts/faces_label.py         # apply labels
+python scripts/annotate_local.py      # local VLM writes annotations.json
+```
+
+Output is `annotations.json` in the same shape as the cloud path, so
+`POST /api/import` works unchanged. See
+[`docs/local-ai-pipeline.md`](docs/local-ai-pipeline.md) for the full
+design, rationale, and tuning knobs.
 
 ## Deployment
 
@@ -293,7 +325,7 @@ Three tables: `photos` (annotations), `photo_people` (many-to-many tags), `peopl
 - **Frontend**: Vanilla JavaScript (ES modules), HTML5, CSS3 -- no build step required
 - **Backend**: Cloudflare Worker + D1 (SQLite)
 - **Images**: Cloudflare R2 (with local fallback)
-- **AI**: Claude Sonnet (via Anthropic API) for photo descriptions and clustering
+- **AI**: Claude Sonnet (via Anthropic API) for photo descriptions and clustering; optional [local pipeline](docs/local-ai-pipeline.md) using InsightFace + HDBSCAN + Qwen2.5-VL via Ollama
 - **CI/CD**: GitHub Actions with `cloudflare/wrangler-action`
 - **Scripts**: Python 3 for image processing, uploads, and AI annotation
 
