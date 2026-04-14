@@ -26,23 +26,27 @@ CREATE TABLE IF NOT EXISTS people (
 );
 
 -- ------------------------------------------------------------
--- Authentication allow-list
+-- User profiles
 -- ------------------------------------------------------------
--- Cloudflare Access handles the actual authentication (email OTP).
--- This table is the app-level gate: only emails listed here can use
--- the API, even if they manage to authenticate via Access.
+-- Cloudflare Access is the sole authentication gate — only emails on
+-- the Access application's policy can log in. This table is NOT an
+-- allow-list; it's a profile cache populated on first login, storing
+-- the display name the user picks and their role.
 --
--- Manage manually with:
+-- Rows are created automatically the first time a user hits the API.
+-- New users default to role='member' with name=NULL (they'll be
+-- prompted to set their name). Promote someone to admin manually:
+--
 --   wrangler d1 execute family-album --remote --command \
---     "INSERT INTO allowed_users (email, name, role) VALUES ('grandma@example.com', 'Grandma', 'member');"
+--     "UPDATE users SET role='admin' WHERE email='you@example.com';"
 --
 -- Roles:
---   'admin'  - can delete any anecdote, manage users (reserved for future)
---   'member' - can view, annotate, and add stories
+--   'admin'  - can delete any anecdote (not just their own)
+--   'member' - default; can delete only their own anecdotes
 -- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS allowed_users (
-  email    TEXT PRIMARY KEY,
-  name     TEXT NOT NULL,
-  role     TEXT NOT NULL DEFAULT 'member',
-  added_at TEXT NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS users (
+  email      TEXT PRIMARY KEY,
+  name       TEXT,
+  role       TEXT NOT NULL DEFAULT 'member',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
