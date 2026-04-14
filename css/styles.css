@@ -918,3 +918,40 @@ body {
     padding: 14px;
   }
 }
+
+/* ============================================================
+   Auth-gate screen (shown when user isn't on the family allow-list
+   or when the API is unreachable). Large type, minimal chrome —
+   optimized for seniors.
+   ============================================================ */
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg, #f7f1e5);
+}
+.auth-gate-card {
+  max-width: 520px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 40px 32px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  text-align: center;
+}
+.auth-gate-card h1 {
+  margin: 0 0 20px;
+  font-size: 1.6rem;
+}
+.auth-gate-message {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+.auth-gate-hint {
+  font-size: 0.95rem;
+  color: #666;
+  margin: 0;
+}

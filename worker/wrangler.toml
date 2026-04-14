@@ -1,9 +1,35 @@
 name = "family-album-api"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 account_id = "6404a2d4d7c4c758d8eaf0c6fc972241"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "family-album"
 database_id = "5b5b4e86-dfb8-4b1a-b0d2-c2229fa58710"
+
+# ------------------------------------------------------------
+# Cloudflare Access (Email OTP) — authentication config
+# ------------------------------------------------------------
+# After creating the Access application in the Zero Trust dashboard,
+# fill these in:
+#   - ACCESS_TEAM_DOMAIN: your team domain, e.g. "sameersegal.cloudflareaccess.com"
+#   - ACCESS_AUD:         the Application Audience (AUD) Tag shown on
+#                         the Access application overview page
+#
+# ALLOWED_ORIGINS is a comma-separated list of browser origins allowed
+# to call this API with credentials. Include every Pages domain you use.
+[vars]
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+ALLOWED_ORIGINS = "https://family-album-a2m.pages.dev,http://localhost:8765"
+
+# ------------------------------------------------------------
+# Local dev only — uncomment in a [env.dev] block if you need to run
+# `wrangler dev` without Cloudflare Access in front. Never set these
+# for production.
+# ------------------------------------------------------------
+# [env.dev.vars]
+# AUTH_DEV_BYPASS = "true"
+# AUTH_DEV_EMAIL  = "you@example.com"

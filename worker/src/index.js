@@ -2,23 +2,38 @@
  * Family Album API — Cloudflare Worker + D1
  *
  * REST API for shared photo annotations, people tags, and anecdotes.
+ *
+ * Every request is authenticated via Cloudflare Access (Email OTP). See
+ * ./auth.js for details. The caller's identity (email + name) comes from
+ * the verified Access JWT — clients cannot spoof it.
  */
+import { authenticate, AuthError } from './auth.js';
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const method = request.method;
 
-    // CORS preflight
+    // CORS preflight — no auth required (browsers never send credentials on OPTIONS)
     if (method === 'OPTIONS') {
-      return corsResponse(new Response(null, { status: 204 }));
+      return corsResponse(new Response(null, { status: 204 }), request, env);
+    }
+
+    let user;
+    try {
+      user = await authenticate(request, env);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        return corsResponse(json({ error: err.message }, err.status), request, env);
+      }
+      return corsResponse(json({ error: 'Authentication failed' }, 500), request, env);
     }
 
     try {
-      const response = await handleRequest(method, url.pathname, request, env.DB);
-      return corsResponse(response);
+      const response = await handleRequest(method, url.pathname, request, env.DB, user);
+      return corsResponse(response, request, env);
     } catch (err) {
-      return corsResponse(json({ error: err.message }, 500));
+      return corsResponse(json({ error: err.message }, 500), request, env);
     }
   },
 };
@@ -27,7 +42,12 @@ export default {
 // ROUTER
 // ============================================================
 
-async function handleRequest(method, path, request, db) {
+async function handleRequest(method, path, request, db, user) {
+  // GET /api/me — who am I?
+  if (method === 'GET' && path === '/api/me') {
+    return json(user);
+  }
+
   // GET /api/photos
   if (method === 'GET' && path === '/api/photos') {
     return getAllPhotos(db);
@@ -54,19 +74,19 @@ async function handleRequest(method, path, request, db) {
   // /api/photos/:id/confirm
   const confirmMatch = path.match(/^\/api\/photos\/([^/]+)\/confirm$/);
   if (confirmMatch && method === 'POST') {
-    return confirmPhoto(db, decodeURIComponent(confirmMatch[1]), await request.json());
+    return confirmPhoto(db, decodeURIComponent(confirmMatch[1]), user);
   }
 
   // /api/photos/:id/corrections
   const correctionsMatch = path.match(/^\/api\/photos\/([^/]+)\/corrections$/);
   if (correctionsMatch && method === 'POST') {
-    return saveCorrections(db, decodeURIComponent(correctionsMatch[1]), await request.json());
+    return saveCorrections(db, decodeURIComponent(correctionsMatch[1]), await request.json(), user);
   }
 
   // /api/photos/:id/anecdotes
   const anecdotesMatch = path.match(/^\/api\/photos\/([^/]+)\/anecdotes$/);
   if (anecdotesMatch && method === 'POST') {
-    return addAnecdote(db, decodeURIComponent(anecdotesMatch[1]), await request.json());
+    return addAnecdote(db, decodeURIComponent(anecdotesMatch[1]), await request.json(), user);
   }
 
   // DELETE /api/photos/:id/anecdotes/:idx
@@ -75,14 +95,15 @@ async function handleRequest(method, path, request, db) {
     return deleteAnecdote(
       db,
       decodeURIComponent(anecdoteDeleteMatch[1]),
-      parseInt(anecdoteDeleteMatch[2], 10)
+      parseInt(anecdoteDeleteMatch[2], 10),
+      user
     );
   }
 
   // /api/photos/:id/people
   const peopleMatch = path.match(/^\/api\/photos\/([^/]+)\/people$/);
   if (peopleMatch && method === 'POST') {
-    return tagPerson(db, decodeURIComponent(peopleMatch[1]), await request.json());
+    return tagPerson(db, decodeURIComponent(peopleMatch[1]), await request.json(), user);
   }
 
   // DELETE /api/photos/:id/people/:name
@@ -184,19 +205,19 @@ async function patchPhoto(db, photoId, updates) {
   return getPhoto(db, photoId);
 }
 
-async function confirmPhoto(db, photoId, body) {
+async function confirmPhoto(db, photoId, user) {
   await ensurePhoto(db, photoId);
   const now = new Date().toISOString();
   await db
     .prepare(
       "UPDATE photos SET confirmed = 1, confirmed_by = ?, confirmed_at = ?, updated_at = datetime('now') WHERE photo_id = ?"
     )
-    .bind(body.confirmedBy || '', now, photoId)
+    .bind(user.name, now, photoId)
     .run();
   return getPhoto(db, photoId);
 }
 
-async function saveCorrections(db, photoId, body) {
+async function saveCorrections(db, photoId, body, user) {
   await ensurePhoto(db, photoId);
 
   // Merge corrections with existing
@@ -209,19 +230,20 @@ async function saveCorrections(db, photoId, body) {
     .prepare(
       "UPDATE photos SET corrections = ?, confirmed = 1, confirmed_by = ?, confirmed_at = ?, updated_at = datetime('now') WHERE photo_id = ?"
     )
-    .bind(JSON.stringify(merged), body.confirmedBy || '', now, photoId)
+    .bind(JSON.stringify(merged), user.name, now, photoId)
     .run();
 
   return getPhoto(db, photoId);
 }
 
-async function addAnecdote(db, photoId, body) {
+async function addAnecdote(db, photoId, body, user) {
   await ensurePhoto(db, photoId);
 
   const row = await db.prepare('SELECT anecdotes FROM photos WHERE photo_id = ?').bind(photoId).first();
   const anecdotes = JSON.parse(row.anecdotes || '[]');
   anecdotes.push({
-    author: body.author,
+    author: user.name,
+    authorEmail: user.email,
     text: body.text,
     timestamp: new Date().toISOString(),
   });
@@ -234,12 +256,19 @@ async function addAnecdote(db, photoId, body) {
   return json(anecdotes);
 }
 
-async function deleteAnecdote(db, photoId, index) {
+async function deleteAnecdote(db, photoId, index, user) {
   const row = await db.prepare('SELECT anecdotes FROM photos WHERE photo_id = ?').bind(photoId).first();
   if (!row) return json([]);
 
   const anecdotes = JSON.parse(row.anecdotes || '[]');
   if (index >= 0 && index < anecdotes.length) {
+    const target = anecdotes[index];
+    // Only the author (by email) or an admin may delete
+    const isAuthor = target.authorEmail && target.authorEmail === user.email;
+    const isAdmin = user.role === 'admin';
+    if (!isAuthor && !isAdmin) {
+      return json({ error: 'You can only delete your own stories.' }, 403);
+    }
     anecdotes.splice(index, 1);
     await db
       .prepare("UPDATE photos SET anecdotes = ?, updated_at = datetime('now') WHERE photo_id = ?")
@@ -250,7 +279,7 @@ async function deleteAnecdote(db, photoId, index) {
   return json(anecdotes);
 }
 
-async function tagPerson(db, photoId, body) {
+async function tagPerson(db, photoId, body, user) {
   const name = (body.name || '').trim();
   if (!name) return json({ error: 'name required' }, 400);
 
@@ -264,7 +293,7 @@ async function tagPerson(db, photoId, body) {
   // Add to people directory
   await db
     .prepare('INSERT OR IGNORE INTO people (name, added_by, added_at) VALUES (?, ?, ?)')
-    .bind(name, body.addedBy || '', new Date().toISOString())
+    .bind(name, user.name, new Date().toISOString())
     .run();
 
   const people = await db
@@ -350,9 +379,27 @@ function json(data, status = 200) {
   });
 }
 
-function corsResponse(response) {
-  response.headers.set('Access-Control-Allow-Origin', '*');
+/**
+ * CORS with credentials. We must echo a specific Origin (not `*`) because
+ * the browser refuses credentialed responses with wildcard origins.
+ * The ALLOWED_ORIGINS env var is a comma-separated list.
+ */
+function corsResponse(response, request, env) {
+  const origin = request.headers.get('Origin');
+  const allowed = (env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (origin && allowed.includes(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+    response.headers.set('Vary', 'Origin');
+  }
   response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+  response.headers.set(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Cf-Access-Jwt-Assertion'
+  );
   return response;
 }

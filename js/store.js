@@ -12,27 +12,55 @@ const PEOPLE_KEY = 'familyAlbumPeople';
 
 let useApi = false;
 let API_BASE = '';
+let currentUser = null; // { email, name, role } when authenticated via Access
 
 // ============================================================
 // INITIALIZATION
 // ============================================================
+/**
+ * Initialize the store. When the Worker API is configured, fetches
+ * /api/me to establish the authenticated identity from Cloudflare Access.
+ *
+ * Returns:
+ *   { mode: 'api',      user: {...} }  — signed in, ready
+ *   { mode: 'forbidden', error: '...' } — authenticated but not on allow-list
+ *   { mode: 'local' }                   — no worker configured, localStorage only
+ */
 export async function init() {
   const workerUrl = CONFIG.api?.workerUrl;
-  if (workerUrl) {
-    try {
-      const resp = await fetch(`${workerUrl}/api/people`, { method: 'GET' });
-      if (resp.ok) {
-        useApi = true;
-        API_BASE = workerUrl;
-        console.log('[store] Worker API connected');
-      } else {
-        console.warn('[store] Worker API returned', resp.status, '— using localStorage');
-      }
-    } catch (e) {
-      console.warn('[store] Worker API unreachable, using localStorage:', e.message);
-    }
-  } else {
+  if (!workerUrl) {
     console.log('[store] No workerUrl configured — using localStorage');
+    return { mode: 'local' };
+  }
+
+  API_BASE = workerUrl;
+  try {
+    const resp = await fetch(`${workerUrl}/api/me`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (resp.ok) {
+      currentUser = await resp.json();
+      useApi = true;
+      console.log('[store] Signed in as', currentUser.email);
+      return { mode: 'api', user: currentUser };
+    }
+    if (resp.status === 403) {
+      // Authenticated with Access, but not on the family allow-list.
+      const body = await resp.json().catch(() => ({}));
+      return { mode: 'forbidden', error: body.error || 'Not on the allow-list.' };
+    }
+    if (resp.status === 401) {
+      // Access session missing/expired — browser will follow the Access
+      // redirect on the next top-level navigation. Tell the caller to
+      // reload, which triggers the login flow.
+      return { mode: 'unauthenticated' };
+    }
+    console.warn('[store] Unexpected /api/me response:', resp.status);
+    return { mode: 'error', error: `API returned ${resp.status}` };
+  } catch (e) {
+    console.warn('[store] Worker API unreachable:', e.message);
+    return { mode: 'error', error: e.message };
   }
 }
 
@@ -41,9 +69,15 @@ export async function init() {
 // ============================================================
 async function apiFetch(path, options = {}) {
   const resp = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
+  if (resp.status === 401) {
+    // Access session expired mid-use — reload to re-auth via Access.
+    window.location.reload();
+    throw new Error('Session expired; reloading to sign in again.');
+  }
   if (!resp.ok) {
     throw new Error(`API error ${resp.status}: ${await resp.text()}`);
   }
@@ -252,10 +286,26 @@ export async function importAIAnnotations(aiData) {
 // ============================================================
 // USER MANAGEMENT
 // ============================================================
+/**
+ * Returns the display name of the signed-in user. When running against
+ * the Worker API, this comes from Cloudflare Access (verified server-side).
+ * In localStorage-only mode, falls back to a locally-entered name.
+ */
 export function getCurrentUser() {
+  if (currentUser) return currentUser.name;
   return localStorage.getItem(USER_KEY) || '';
 }
 
+export function getCurrentUserEmail() {
+  return currentUser ? currentUser.email : null;
+}
+
+export function getCurrentUserRole() {
+  return currentUser ? currentUser.role : null;
+}
+
 export function setCurrentUser(name) {
+  // Only meaningful in localStorage mode; ignored when signed in via Access.
+  if (currentUser) return;
   localStorage.setItem(USER_KEY, name.trim());
 }

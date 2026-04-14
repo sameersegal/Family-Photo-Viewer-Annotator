@@ -24,3 +24,25 @@ CREATE TABLE IF NOT EXISTS people (
   added_by TEXT NOT NULL,
   added_at TEXT NOT NULL
 );
+
+-- ------------------------------------------------------------
+-- Authentication allow-list
+-- ------------------------------------------------------------
+-- Cloudflare Access handles the actual authentication (email OTP).
+-- This table is the app-level gate: only emails listed here can use
+-- the API, even if they manage to authenticate via Access.
+--
+-- Manage manually with:
+--   wrangler d1 execute family-album --remote --command \
+--     "INSERT INTO allowed_users (email, name, role) VALUES ('grandma@example.com', 'Grandma', 'member');"
+--
+-- Roles:
+--   'admin'  - can delete any anecdote, manage users (reserved for future)
+--   'member' - can view, annotate, and add stories
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS allowed_users (
+  email    TEXT PRIMARY KEY,
+  name     TEXT NOT NULL,
+  role     TEXT NOT NULL DEFAULT 'member',
+  added_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
