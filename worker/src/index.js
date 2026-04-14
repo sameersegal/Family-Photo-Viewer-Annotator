@@ -7,7 +7,7 @@
  * ./auth.js for details. The caller's identity (email + name) comes from
  * the verified Access JWT — clients cannot spoof it.
  */
-import { authenticate, AuthError } from './auth.js';
+import { authenticate, setUserName, AuthError } from './auth.js';
 
 export default {
   async fetch(request, env) {
@@ -30,9 +30,12 @@ export default {
     }
 
     try {
-      const response = await handleRequest(method, url.pathname, request, env.DB, user);
+      const response = await handleRequest(method, url.pathname, request, env, user);
       return corsResponse(response, request, env);
     } catch (err) {
+      if (err instanceof AuthError) {
+        return corsResponse(json({ error: err.message }, err.status), request, env);
+      }
       return corsResponse(json({ error: err.message }, 500), request, env);
     }
   },
@@ -42,10 +45,19 @@ export default {
 // ROUTER
 // ============================================================
 
-async function handleRequest(method, path, request, db, user) {
+async function handleRequest(method, path, request, env, user) {
+  const db = env.DB;
+
   // GET /api/me — who am I?
   if (method === 'GET' && path === '/api/me') {
     return json(user);
+  }
+
+  // PATCH /api/me — update my display name
+  if (method === 'PATCH' && path === '/api/me') {
+    const body = await request.json();
+    const updated = await setUserName(env, user.email, body.name);
+    return json(updated);
   }
 
   // GET /api/photos
@@ -212,7 +224,7 @@ async function confirmPhoto(db, photoId, user) {
     .prepare(
       "UPDATE photos SET confirmed = 1, confirmed_by = ?, confirmed_at = ?, updated_at = datetime('now') WHERE photo_id = ?"
     )
-    .bind(user.name, now, photoId)
+    .bind((user.name || user.email), now, photoId)
     .run();
   return getPhoto(db, photoId);
 }
@@ -230,7 +242,7 @@ async function saveCorrections(db, photoId, body, user) {
     .prepare(
       "UPDATE photos SET corrections = ?, confirmed = 1, confirmed_by = ?, confirmed_at = ?, updated_at = datetime('now') WHERE photo_id = ?"
     )
-    .bind(JSON.stringify(merged), user.name, now, photoId)
+    .bind(JSON.stringify(merged), (user.name || user.email), now, photoId)
     .run();
 
   return getPhoto(db, photoId);
@@ -242,7 +254,7 @@ async function addAnecdote(db, photoId, body, user) {
   const row = await db.prepare('SELECT anecdotes FROM photos WHERE photo_id = ?').bind(photoId).first();
   const anecdotes = JSON.parse(row.anecdotes || '[]');
   anecdotes.push({
-    author: user.name,
+    author: (user.name || user.email),
     authorEmail: user.email,
     text: body.text,
     timestamp: new Date().toISOString(),
@@ -293,7 +305,7 @@ async function tagPerson(db, photoId, body, user) {
   // Add to people directory
   await db
     .prepare('INSERT OR IGNORE INTO people (name, added_by, added_at) VALUES (?, ?, ?)')
-    .bind(name, user.name, new Date().toISOString())
+    .bind(name, (user.name || user.email), new Date().toISOString())
     .run();
 
   const people = await db

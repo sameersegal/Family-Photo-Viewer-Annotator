@@ -305,7 +305,26 @@ export function getCurrentUserRole() {
 }
 
 export function setCurrentUser(name) {
-  // Only meaningful in localStorage mode; ignored when signed in via Access.
-  if (currentUser) return;
-  localStorage.setItem(USER_KEY, name.trim());
+  const trimmed = (name || '').trim();
+  if (!trimmed) return;
+  if (currentUser) {
+    // Signed in via Access — persist to the server.
+    currentUser = { ...currentUser, name: trimmed };
+    return apiFetch('/api/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ name: trimmed }),
+    }).then(updated => {
+      currentUser = updated;
+    });
+  }
+  localStorage.setItem(USER_KEY, trimmed);
+}
+
+/**
+ * Is the signed-in user still missing a display name? True for
+ * first-time logins in API mode (the frontend should prompt).
+ */
+export function needsDisplayName() {
+  if (currentUser) return !currentUser.name;
+  return !localStorage.getItem(USER_KEY);
 }
