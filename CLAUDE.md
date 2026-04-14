@@ -26,10 +26,20 @@ python scripts/upload_to_r2.py             # Upload all images to R2
 python scripts/upload_to_r2.py --limit 20  # Upload first 20
 python scripts/upload_to_r2.py --dry-run   # Preview only
 
-# AI annotations (requires ANTHROPIC_API_KEY)
+# AI annotations — cloud (requires ANTHROPIC_API_KEY)
 python scripts/ai_annotate.py              # Annotate photos
 python scripts/ai_annotate.py --cluster    # Cluster by event/trip
 python scripts/ai_annotate.py --batch      # Cheaper batch mode
+
+# AI annotations — local pipeline (runs on DGX Spark, no API cost)
+# One-time: pip install -r requirements-local.txt ; install + run Ollama
+python scripts/faces_detect.py             # Pass A: InsightFace → faces.json
+python scripts/faces_cluster.py            # Pass B: HDBSCAN → clusters.json
+                                           #         + people/montage/index.html
+# (then manually edit people/labels.yml in an editor)
+python scripts/faces_label.py              # Pass C: apply labels → photo_people.json
+python scripts/annotate_local.py           # Pass D: local VLM (Ollama/Qwen2.5-VL)
+                                           #         → annotations.json (same shape)
 
 # Worker deployment
 cd worker && npm install
@@ -66,7 +76,9 @@ npx wrangler d1 execute family-album --remote --file=schema.sql  # Init DB schem
 | `js/store.js` | Data persistence layer — switches between Worker API and localStorage |
 | `js/app.js` | SPA routing, views, event handling |
 | `worker/src/index.js` | REST API for annotations, people, anecdotes |
-| `worker/schema.sql` | D1 database schema (3 tables) |
+| `worker/schema.sql` | D1 database schema (people, photos, photo_people, photo_faces, users) |
+| `scripts/faces_*.py`, `scripts/annotate_local.py` | Offline local-AI pipeline (DGX Spark) |
+| `requirements-local.txt` | Python deps for the local-AI pipeline only |
 | `.github/workflows/deploy.yml` | CI/CD pipeline |
 
 ## Things to Know
@@ -77,3 +89,5 @@ npx wrangler d1 execute family-album --remote --file=schema.sql  # Init DB schem
 - R2 CORS is configured to allow `https://family-album-a2m.pages.dev` and `http://localhost:3000`. Update if adding a custom domain.
 - The Worker's `wrangler.toml` contains the account ID and D1 database ID — these are not secrets.
 - GitHub secrets needed for CI/CD: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+- Local-AI pipeline is offline: `faces_detect.py` → `faces_cluster.py` → (human edits `people/labels.yml`) → `faces_label.py` → `annotate_local.py`. All artifacts (`faces.json`, `clusters.json`, `photo_people.json`, `photo_faces.json`, `people/labels.yml`, `people/montage/`) are gitignored. The only deliverable that leaves the Spark is `annotations.json` (imported via the existing `/api/import`) and eventually `photo_faces.json` (for bbox overlays).
+- Face embeddings (512-d ArcFace vectors) are never uploaded to D1 — they stay local in `faces.json`. D1's `photo_faces` table stores only resolved bbox + person_name.

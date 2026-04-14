@@ -26,6 +26,35 @@ CREATE TABLE IF NOT EXISTS people (
 );
 
 -- ------------------------------------------------------------
+-- AI-detected faces
+-- ------------------------------------------------------------
+-- Populated by the offline local-AI pipeline (scripts/faces_detect.py →
+-- faces_cluster.py → faces_label.py) running on an NVIDIA DGX Spark.
+-- Embeddings themselves are NOT stored in D1 — they live in faces.json
+-- on the local machine. D1 only gets the resolved bbox + person_name
+-- (once a human confirms a cluster label), so the viewer can overlay
+-- boxes and the existing photo_people flow stays the canonical source
+-- of truth for "who is in this photo".
+--
+-- person_name is NULL for unlabeled faces (unknown clusters / rejects).
+-- source distinguishes 'ai' (auto-assigned from a labeled cluster) from
+-- 'human' (someone drew / corrected the box in the UI).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS photo_faces (
+  face_id     TEXT PRIMARY KEY,
+  photo_id    TEXT NOT NULL,
+  bbox_json   TEXT NOT NULL,       -- [x, y, w, h] in pixels
+  person_name TEXT,                -- NULL until labeled
+  confidence  REAL,                -- detector score, 0..1
+  source      TEXT NOT NULL DEFAULT 'ai',  -- 'ai' | 'human'
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (photo_id) REFERENCES photos(photo_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_photo_faces_photo ON photo_faces(photo_id);
+CREATE INDEX IF NOT EXISTS idx_photo_faces_person ON photo_faces(person_name);
+
+-- ------------------------------------------------------------
 -- User profiles
 -- ------------------------------------------------------------
 -- Cloudflare Access is the sole authentication gate — only emails on

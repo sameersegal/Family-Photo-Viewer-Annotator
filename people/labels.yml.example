@@ -1,0 +1,24 @@
+# labels.yml — cluster_id → person_name
+#
+# This file is generated as a template by faces_cluster.py (as
+# people/labels.yml). After you edit it, run:
+#
+#   python scripts/faces_label.py
+#
+# Special values:
+#   reject       — cluster is false positives / not a real face
+#   skip         — leave unlabeled for now (same effect as a comment)
+#   split        — leave unlabeled; plan to split this cluster later
+#
+# Multiple cluster_ids can map to the same name — that's the intended
+# way to cover age variation (same person across decades often lands
+# in different clusters).
+
+# Example:
+# cluster_0000: Ma           # 142 faces - adult
+# cluster_0007: Ma           # 38 faces  - as a young woman
+# cluster_0001: Priya        # 98 faces
+# cluster_0002: Rohan
+# cluster_0003: reject       # 12 faces of a statue's face
+# cluster_0004: split        # cousin Arun + cousin Vikram - similar
+# cluster_0005: skip
