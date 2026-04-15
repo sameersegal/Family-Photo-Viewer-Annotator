@@ -334,8 +334,13 @@ async function getAllPeople(db) {
 }
 
 async function importAIAnnotations(db, body) {
-  const data = body.data || body;
+  // Accept either:
+  //   { photoId: ai, ... }                                 (legacy flat shape)
+  //   { data: {...}, photo_people?: {photoId: [names]} }   (extended shape)
+  const data = body.data || (body.photo_people ? {} : body);
+  const photoPeople = body.photo_people || {};
   let imported = 0;
+  let peopleLinked = 0;
 
   for (const [photoId, ai] of Object.entries(data)) {
     const existing = await db
@@ -358,7 +363,33 @@ async function importAIAnnotations(db, body) {
     }
   }
 
-  return json({ imported });
+  // Cluster-resolved people for each photo. Idempotent: INSERT OR IGNORE on
+  // both tables, so re-running the import never creates duplicates. Any
+  // names the user removes via the UI will stay removed until the next
+  // import brings them back — acceptable because the cluster labels are
+  // considered ground truth from the offline pipeline.
+  const nowIso = new Date().toISOString();
+  for (const [photoId, names] of Object.entries(photoPeople)) {
+    if (!Array.isArray(names) || names.length === 0) continue;
+    // Make sure the photos row exists even if there's no ai blob for it.
+    await db
+      .prepare('INSERT OR IGNORE INTO photos (photo_id) VALUES (?)')
+      .bind(photoId)
+      .run();
+    for (const name of names) {
+      await db
+        .prepare('INSERT OR IGNORE INTO people (name, added_by, added_at) VALUES (?, ?, ?)')
+        .bind(name, 'ai-import', nowIso)
+        .run();
+      const res = await db
+        .prepare('INSERT OR IGNORE INTO photo_people (photo_id, person_name) VALUES (?, ?)')
+        .bind(photoId, name)
+        .run();
+      if (res.meta && res.meta.changes) peopleLinked += res.meta.changes;
+    }
+  }
+
+  return json({ imported, peopleLinked });
 }
 
 // ============================================================

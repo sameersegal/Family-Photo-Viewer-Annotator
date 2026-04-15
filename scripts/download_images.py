@@ -14,6 +14,7 @@ Usage:
   https://drive.google.com/drive/folders/<FOLDER_ID>
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -56,7 +57,20 @@ def authenticate():
                 print("Download it from Google Cloud Console (OAuth 2.0 Desktop app).")
                 sys.exit(1)
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
+            headless = os.environ.get("GDRIVE_HEADLESS") == "1"
+            if headless:
+                # Fixed port so the user can SSH-forward it:
+                #   ssh -L 8765:localhost:8765 <spark>
+                # Then open the printed URL in the laptop browser.
+                creds = flow.run_local_server(
+                    host="localhost", port=8765, open_browser=False,
+                    authorization_prompt_message=(
+                        "Open this URL in a browser on a machine that can reach "
+                        "localhost:8765 on the Spark (use SSH port-forwarding):\n\n{url}\n"
+                    ),
+                )
+            else:
+                creds = flow.run_local_server(port=0)
         token_path.write_text(creds.to_json())
 
     return build("drive", "v3", credentials=creds)
@@ -102,16 +116,21 @@ def download_file(service, file_id, dest_path):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python scripts/download_images.py <FOLDER_ID>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Download images from a Google Drive folder.")
+    parser.add_argument("folder_id", help="Google Drive folder ID")
+    parser.add_argument("--limit", type=int, default=None, help="Download only the first N images")
+    args = parser.parse_args()
 
-    folder_id = sys.argv[1]
+    folder_id = args.folder_id
     service = authenticate()
 
     print("Scanning Google Drive folder (recursively)...")
     images = list_files_recursive(service, folder_id)
     print(f"Found {len(images)} images.")
+
+    if args.limit:
+        images = images[: args.limit]
+        print(f"Limiting to first {len(images)}.")
 
     if not images:
         print("No images found. Check the folder ID.")

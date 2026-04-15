@@ -39,6 +39,7 @@ FACES_FILE = Path("faces.json")
 CLUSTERS_FILE = Path("clusters.json")
 MONTAGE_DIR = Path("people/montage")
 MONTAGE_HTML = MONTAGE_DIR / "index.html"
+CROPS_DIR = MONTAGE_DIR / "crops"
 LABELS_TEMPLATE = Path("people/labels.yml")
 
 
@@ -97,10 +98,10 @@ h1 { margin: 0 0 8px; }
     border: 1px solid #333;
 }
 .face img {
-    position: absolute;
-    top: 0; left: 0;
-    max-width: none;
-    max-height: none;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 .face .cap {
     position: absolute;
@@ -128,30 +129,41 @@ def load_faces() -> dict:
     return json.loads(FACES_FILE.read_text(encoding="utf-8"))
 
 
-def render_face_crop_css(bbox: list, img_natural_hint: int = 1000) -> str:
+def write_face_crop(face_id: str, photo_name: str, bbox: list) -> Path | None:
     """
-    Build inline CSS for a <img> so only the bbox region is visible inside
-    a square container. We don't know the image's actual pixel dimensions
-    at static-render time, so we use a hint-based approximation: scale the
-    image so that max(w,h) of the bbox becomes ~96px (the grid cell),
-    translate so the bbox top-left aligns with 0,0.
+    Write a square face crop to people/montage/crops/<face_id>.jpg using
+    OpenCV, which reads raw pixels and therefore matches the bbox
+    coordinates stored by faces_detect.py (both ignore EXIF orientation).
+    Returns the crop path, or None on failure.
+    """
+    import cv2  # local import: heavy, only needed when generating crops
 
-    This is approximate but good enough for a human to recognize faces.
-    For exact alignment we'd need to read each image's dimensions —
-    expensive and not worth it for a labeling aid.
-    """
+    CROPS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = CROPS_DIR / f"{face_id}.jpg"
+    if out_path.exists():
+        return out_path
+
+    src = Path("images") / photo_name
+    img = cv2.imread(str(src))
+    if img is None:
+        return None
+
+    H, W = img.shape[:2]
     x, y, w, h = bbox
-    cell = 96.0
-    scale = cell / max(w, h)
-    # Image is displayed at `scale` times its natural size.
-    # In that scaled space the face bbox is at (x*scale, y*scale).
-    tx = -x * scale
-    ty = -y * scale
-    # Use transform-origin top-left so translate + scale are predictable.
-    return (
-        f"transform: translate({tx:.1f}px, {ty:.1f}px) scale({scale:.4f}); "
-        f"transform-origin: 0 0;"
-    )
+    # Expand to a square centred on the bbox, with a little margin, and
+    # clamp to image bounds.
+    cx, cy = x + w / 2.0, y + h / 2.0
+    side = max(w, h) * 1.4
+    x0 = max(0, int(cx - side / 2.0))
+    y0 = max(0, int(cy - side / 2.0))
+    x1 = min(W, int(cx + side / 2.0))
+    y1 = min(H, int(cy + side / 2.0))
+    if x1 <= x0 or y1 <= y0:
+        return None
+
+    crop = img[y0:y1, x0:x1]
+    cv2.imwrite(str(out_path), crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    return out_path
 
 
 def write_montage(clusters: list, faces: dict, top_n: int, samples: int,
@@ -198,13 +210,13 @@ def write_montage(clusters: list, faces: dict, top_n: int, samples: int,
             face = faces.get(fid)
             if not face:
                 continue
-            # Montage HTML lives at people/montage/index.html, so images
-            # are two levels up.
-            img_src = f"../../images/{face['photo']}"
-            crop_css = render_face_crop_css(face["bbox"])
+            crop_path = write_face_crop(fid, face["photo"], face["bbox"])
+            if crop_path is None:
+                continue
+            img_src = f"crops/{crop_path.name}"
             parts.append(
                 f"<div class='face'>"
-                f"<img src='{escape(img_src)}' style='{crop_css}' loading='lazy' alt=''>"
+                f"<img src='{escape(img_src)}' loading='lazy' alt=''>"
                 f"<div class='cap'>{escape(face['photo'])}</div>"
                 f"</div>"
             )
@@ -220,10 +232,13 @@ def write_labels_template(clusters: list, top_n: int) -> None:
         return  # never clobber user edits
 
     LABELS_TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
+    # Include every real cluster — the montage can be truncated to top_n,
+    # but there's no benefit to hiding clusters from the YAML where the
+    # user does the actual labeling.
     ranked = sorted(
         [c for c in clusters if c["id"] != "noise"],
         key=lambda c: -c["size"],
-    )[:top_n]
+    )
 
     lines = [
         "# labels.yml — cluster_id → person_name",
