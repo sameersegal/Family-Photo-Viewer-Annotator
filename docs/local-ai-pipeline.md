@@ -153,10 +153,11 @@ on L2-normalized vectors), groups faces into clusters. Produces:
 
 - `clusters.json` — every cluster's members + centroid.
 - `people/montage/index.html` — a standalone static page showing the
-  top-N largest clusters as grids of representative face crops. Open
-  it in any browser; no server needed. Face crops are rendered
-  in-browser via CSS transforms on the original images — no
-  thumbnails are written to disk.
+  top-N largest clusters as grids of representative face crops. Face
+  crops are written as small JPG thumbnails under
+  `people/montage/crops/` using OpenCV (raw pixels, so they match the
+  stored bbox coordinates regardless of EXIF orientation). Open the
+  HTML via any static server — no build step.
 - `people/labels.yml` — a starter template with every top cluster
   listed as `cluster_id: skip`, ready for you to edit.
 
@@ -251,8 +252,14 @@ bottleneck. Faces + clustering are minutes; VLM is hours.
 
 ```bash
 # One-time setup on the Spark
+# Always work inside a venv; check for existing tools before installing.
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements-local.txt
-curl -fsSL https://ollama.com/install.sh | sh
+
+# Ollama: check first — it may already be installed system-wide.
+command -v ollama || curl -fsSL https://ollama.com/install.sh | sh
+# Make sure the server is running (systemd unit or `ollama serve &`).
 ollama pull qwen2.5vl:7b
 
 # Smoke-test with a small subset first

@@ -66,7 +66,9 @@ async function loadManifest() {
     const url = CONFIG.imageSource === 'r2'
       ? `${CONFIG.r2.publicUrl}/manifest.json`
       : './manifest.json';
-    const resp = await fetch(url);
+    // Manifest changes whenever new photos are uploaded; always revalidate
+    // so users don't see a stale list from the edge/browser cache.
+    const resp = await fetch(url, { cache: 'no-store' });
     if (!resp.ok) throw new Error('No manifest');
     const data = await resp.json();
     return data.images || [];
