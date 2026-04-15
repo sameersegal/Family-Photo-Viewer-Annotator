@@ -92,14 +92,15 @@
 <!-- ============================================================
      USER NAME MODAL
      ============================================================ -->
-<!-- Only shown in local / offline mode. When signed in via Cloudflare
-     Access, the user's name is pulled from their verified identity. -->
+<!-- Shown on first login (both API and localStorage modes) to collect
+     the display name used for stories and attributions. -->
 <div id="user-modal" class="modal">
   <div class="modal-content">
     <h2>Welcome to the Family Album</h2>
     <p>What's your name? So we know who's adding stories.</p>
     <input type="text" id="user-name-input" placeholder="Your name...">
     <button id="user-name-submit">Enter Album</button>
+    <p id="user-name-error" class="modal-error" role="alert"></p>
   </div>
 </div>
 

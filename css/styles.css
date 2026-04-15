@@ -842,6 +842,18 @@ body {
   background: var(--accent-hover);
 }
 
+.modal-content button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.modal-error {
+  color: #c00;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+  margin-top: 12px;
+}
+
 /* ============================================================
    LOADING & EMPTY STATES
    ============================================================ */
