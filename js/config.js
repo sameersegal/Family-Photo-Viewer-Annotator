@@ -37,7 +37,7 @@ export const CONFIG = {
 
   // App settings
   app: {
-    title: "Ajja's photo",
+    title: "Ajja's Photos",
     subtitle: 'Photos & Memories',
     frameImage: 'assets/frame.png',
   },
