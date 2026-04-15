@@ -584,9 +584,23 @@ function hideUserModal() {
 async function submitUserName() {
   const name = $('#user-name-input').value.trim();
   if (!name) return;
-  await store.setCurrentUser(name);
-  $('#user-name-display').textContent = name;
-  hideUserModal();
+  const submitBtn = $('#user-name-submit');
+  const errorEl = $('#user-name-error');
+  if (errorEl) errorEl.textContent = '';
+  submitBtn.disabled = true;
+  try {
+    await store.setCurrentUser(name);
+    $('#user-name-display').textContent = name;
+    hideUserModal();
+  } catch (err) {
+    console.error('[app] Failed to save display name:', err);
+    if (errorEl) {
+      errorEl.textContent =
+        "Sorry, we couldn't save your name. Please try again in a moment.";
+    }
+  } finally {
+    submitBtn.disabled = false;
+  }
 }
 
 // ============================================================
@@ -602,7 +616,7 @@ function setupEvents() {
   });
 
   // User modal
-  $('#user-name-submit').addEventListener('click', submitUserName);
+  $('#user-name-submit').addEventListener('click', () => { submitUserName(); });
   $('#user-name-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitUserName(); });
   $('#change-user').addEventListener('click', showUserModal);
 
@@ -794,6 +808,20 @@ async function init() {
   if (auth.mode === 'error') {
     showNotAuthorized(
       `We couldn't reach the album right now. Please try again in a minute. (${auth.error})`
+    );
+    return;
+  }
+  if (auth.mode === 'unauthenticated') {
+    // Access session missing / cross-site cookie dropped. A top-level
+    // reload will re-enter the Access login flow.
+    showNotAuthorized(
+      "Your sign-in has expired. Reload this page to sign in again."
+    );
+    return;
+  }
+  if (auth.mode === 'forbidden') {
+    showNotAuthorized(
+      auth.error || "You aren't on the album's allow-list yet."
     );
     return;
   }

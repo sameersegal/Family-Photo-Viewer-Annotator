@@ -304,18 +304,20 @@ export function getCurrentUserRole() {
   return currentUser ? currentUser.role : null;
 }
 
-export function setCurrentUser(name) {
+export async function setCurrentUser(name) {
   const trimmed = (name || '').trim();
   if (!trimmed) return;
   if (currentUser) {
-    // Signed in via Access — persist to the server.
-    currentUser = { ...currentUser, name: trimmed };
-    return apiFetch('/api/me', {
+    // Signed in via Access — persist to the server first, then adopt
+    // whatever the server returns. Don't mutate currentUser locally
+    // until the write succeeds, so a failed PATCH doesn't leave us in
+    // a half-applied state.
+    const updated = await apiFetch('/api/me', {
       method: 'PATCH',
       body: JSON.stringify({ name: trimmed }),
-    }).then(updated => {
-      currentUser = updated;
     });
+    currentUser = updated;
+    return;
   }
   localStorage.setItem(USER_KEY, trimmed);
 }
